@@ -50,19 +50,19 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     needs: keepalive
+    timeout-minutes: 60
     permissions:
       actions: write
       contents: read
     steps:
-      - name: Delete all previous workflow runs
+      - name: Delete completed workflow runs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh run list --repo ${{ github.repository }} --workflow "SAP BAS Keep Alive" --limit 1000 --json databaseId \
-            | jq -r '.[].databaseId' \
+          gh run list --repo ${{ github.repository }} --workflow "SAP BAS Keep Alive" --limit 1000 --json databaseId,status \
+            | jq -r '.[] | select(.status == "completed") | .databaseId' \
             | while read -r id; do
-                if [ "$id" != "${{ github.run_id }}" ]; then
-                  echo "Deleting run $id"
-                  gh run delete "$id" --repo ${{ github.repository }}
-                fi
+                echo "Deleting run $id"
+                gh run delete "$id" --repo ${{ github.repository }} || true
+                sleep 0.3
               done
