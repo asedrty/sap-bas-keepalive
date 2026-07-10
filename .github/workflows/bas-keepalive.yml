@@ -1,9 +1,12 @@
 name: SAP BAS Keep Alive
-
 on:
   schedule:
     - cron: '0 * * * *'   # 每小时执行一次
   workflow_dispatch:
+
+concurrency:
+  group: bas-keepalive
+  cancel-in-progress: false
 
 jobs:
   keepalive:
@@ -11,7 +14,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,5 +44,25 @@ jobs:
           echo "Last run: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" > .last-run
           git add .last-run
           git diff --staged --quiet || git commit -m "chore: keepalive $(date -u '+%Y-%m-%d %H:%M')"
-          git pull --rebase origin main
+          git pull --rebase origin ${{ github.ref_name }}
           git push
+
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: keepalive
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete all previous workflow runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run list --repo ${{ github.repository }} --workflow "SAP BAS Keep Alive" --limit 1000 --json databaseId \
+            | jq -r '.[].databaseId' \
+            | while read -r id; do
+                if [ "$id" != "${{ github.run_id }}" ]; then
+                  echo "Deleting run $id"
+                  gh run delete "$id" --repo ${{ github.repository }}
+                fi
+              done
